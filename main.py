@@ -88,9 +88,18 @@ class WebScraper:
         for row in rows[1:]:
             cols = row.find_elements(By.XPATH, './td')
             if len(cols) >= 4:
-                name = cols[0].text
+                name = cols[0].text.replace('\n', ' ')
+                # if ',' in name:
+                #     name = name.split(',')[0]
+                #     address = name.split(',')[1]
+                
                 share_percentage = float(cols[3].text[:-1].strip().replace(',', '.'))
-                owner_list.append({"name": name, "percentage": share_percentage})
+                
+                owner_investment_company = {"name": name, "percentage": share_percentage}
+                # if address:
+                #     owner_investment_company["address"] = address
+                    
+                owner_list.append(owner_investment_company)
         return owner_list
 
     def extract_other_investments(self, table):
@@ -104,7 +113,7 @@ class WebScraper:
                 other_investments.append(name)
         return other_investments
 
-    def check_other_investments(self, url: str):
+    def check_investment_company(self, url: str):
         """Checks other investments for a given URL."""
         self.driver.get(url)
         
@@ -119,8 +128,9 @@ class WebScraper:
 
             significant_ownership = all([owner["percentage"] > 15 for owner in owner_list]) or any([owner["percentage"] > 40 for owner in owner_list])
 
-            return (other_investments if len(other_investments) > 2 else None,
-                    owner_list if significant_ownership else None)
+            ## Fix logic here
+            if len(other_investments) > 2 and significant_ownership:
+                return (other_investments, owner_list)
                     
         except TimeoutException as e:
             print(f"Timeout when checking the first table: {e}")
@@ -141,16 +151,20 @@ class WebScraper:
         investor_data = self.extract_investor_data_and_links()
         document = "# Potential Angel Investors\n\n"
         for name, share_percentage, link, org_nr in investor_data:
-            other_investments, owner_list = self.check_other_investments(link)
+            
+            investment_company_owners_and_investments = self.check_investment_company(link)
 
-            if other_investments:
+            if investment_company_owners_and_investments:
+                other_investments, owner_list = investment_company_owners_and_investments
+                
                 owned_by_table = ""
                 if owner_list:
-                    owned_by_table = "\n".join([f"| {owner['name']} | {owner['percentage']}% |" for owner in owner_list])
+                    for owner in owner_list:
+                        owned_by_table += f"| {owner['name']} | {owner['percentage']}% |\n"
 
                 other_investments_list = "\n".join([f"- {investment}" for investment in other_investments])
 
-                document += f"### {name} ({org_nr})\n*Owns {share_percentage} of the company*\n\n### Owned by\n| Name | Percentage |\n| --- | --- |\n{owned_by_table}\n\n### Other investments\n{other_investments_list}\n\n"
+                document += f"### [{name} ({org_nr})]({link})\n*Owns {share_percentage} of the company*\n\n### Owned by\n| Name | Percentage |\n| --- | --- |\n{owned_by_table}\n\n### Other investments\n{other_investments_list}\n\n"
         create_markdown_file(file_name, document)
 
 
